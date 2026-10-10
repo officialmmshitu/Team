@@ -1,6 +1,6 @@
 {
   "name": "imi-platform",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "private": true,
   "description": "Market research and business management platform with a Control Centre",
   "scripts": {

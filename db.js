@@ -15,7 +15,7 @@ fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
 const db = new DatabaseSync(DB_FILE);
 
 db.exec(`
-PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;
+PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;
 CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, created_at TEXT NOT NULL, verified_at TEXT);
 CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS reset_tokens (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL);
@@ -131,6 +131,57 @@ if (!db.prepare("SELECT 1 FROM pragma_table_info('listings') WHERE name = 'secti
 }
 db.exec("UPDATE listings SET section = 'bounty' WHERE type = 'gig' AND section IS NULL");
 db.exec('CREATE INDEX IF NOT EXISTS listings_section_idx ON listings (type, section, status)');
+
+// ---- CRM: deals, daily reports, tasks, files (shared between the members of a deal) ----
+db.exec(`
+CREATE TABLE IF NOT EXISTS deals (
+  id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id),
+  title TEXT NOT NULL, company TEXT NOT NULL, description TEXT,
+  value REAL NOT NULL DEFAULT 0 CHECK (value >= 0), currency TEXT NOT NULL DEFAULT 'USD',
+  stage TEXT NOT NULL DEFAULT 'qualification' CHECK (stage IN ('qualification','discovery','proposal','negotiation','contract','closed_won','closed_lost')),
+  hold INTEGER NOT NULL DEFAULT 0, priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low','medium','high')),
+  expected_close TEXT, source TEXT, tags TEXT NOT NULL DEFAULT '[]', lost_reason TEXT, closed_at TEXT,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS deals_owner_idx ON deals (owner_id, deleted_at);
+CREATE TABLE IF NOT EXISTS deal_members (
+  deal_id TEXT NOT NULL REFERENCES deals(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  label TEXT, created_at TEXT NOT NULL, PRIMARY KEY (deal_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS deal_members_user_idx ON deal_members (user_id);
+CREATE TABLE IF NOT EXISTS deal_contacts (
+  id TEXT PRIMARY KEY, deal_id TEXT NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, role TEXT, email TEXT, phone TEXT, tag TEXT, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS deal_reports (
+  id TEXT PRIMARY KEY, deal_id TEXT NOT NULL REFERENCES deals(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id),
+  kind TEXT NOT NULL CHECK (kind IN ('daily','note')), report_date TEXT NOT NULL, body TEXT NOT NULL,
+  status TEXT CHECK (status IS NULL OR status IN ('completed','in_progress','blocked')), next_step TEXT,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS deal_reports_daily_uq ON deal_reports (deal_id, user_id, report_date) WHERE kind = 'daily';
+CREATE INDEX IF NOT EXISTS deal_reports_deal_idx ON deal_reports (deal_id, report_date DESC);
+CREATE TABLE IF NOT EXISTS deal_files (
+  id TEXT PRIMARY KEY, deal_id TEXT NOT NULL REFERENCES deals(id) ON DELETE CASCADE, uploader_id TEXT NOT NULL REFERENCES users(id),
+  name TEXT NOT NULL, stored TEXT NOT NULL, size INTEGER NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS deal_activity (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, deal_id TEXT NOT NULL REFERENCES deals(id) ON DELETE CASCADE, user_id TEXT REFERENCES users(id),
+  action TEXT NOT NULL, summary TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS deal_activity_idx ON deal_activity (deal_id, id DESC);
+CREATE TABLE IF NOT EXISTS crm_tasks (
+  id TEXT PRIMARY KEY, creator_id TEXT NOT NULL REFERENCES users(id), assignee_id TEXT NOT NULL REFERENCES users(id),
+  deal_id TEXT REFERENCES deals(id) ON DELETE CASCADE, title TEXT NOT NULL, description TEXT,
+  type TEXT NOT NULL DEFAULT 'todo' CHECK (type IN ('todo','call','email','meeting','follow_up')),
+  status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo','in_progress','blocked','done')),
+  priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low','medium','high')),
+  due_date TEXT, completed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS crm_tasks_assignee_idx ON crm_tasks (assignee_id, status, due_date);
+CREATE INDEX IF NOT EXISTS crm_tasks_deal_idx ON crm_tasks (deal_id);
+CREATE INDEX IF NOT EXISTS notifications_user_idx ON notifications (user_id, read_at, created_at);
+`);
 
 // one-time import of users from the very first JSON-file version
 const OLD_USERS = path.join(DATA_DIR, 'users.json');

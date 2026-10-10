@@ -551,4 +551,4 @@ function dbError(e) { // map database rule violations to friendly API errors
   return null;
 }
 
-module.exports = { create, serveUpload, Http, dbError };
+module.exports = { create, serveUpload, Http, dbError, parse };

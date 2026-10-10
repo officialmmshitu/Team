@@ -19,6 +19,7 @@ const { promisify } = require('node:util');
 const scrypt = promisify(crypto.scrypt);
 const { db, ACCESS_DEFAULT } = require('./db');
 const adminApi = require('./admin-api');
+const crmApi = require('./crm-api');
 
 // ---- config (.env is optional)
 const PORT = Number(process.env.PORT) || 4000;
@@ -316,6 +317,7 @@ async function setupApi(req, res, p) {
 }
 
 const adminHandle = adminApi.create({ getSession: sessionUser, hashPw, sendMail, appUrl: APP_URL });
+const crmHandle = crmApi.create({ getSession: sessionUser });
 function adminInfo(user) { // staff role + permissions when this person may use the Control Centre, otherwise null
   const st = db.prepare('SELECT role, permissions, status FROM staff WHERE user_id = ?').get(user.id);
   if (!st || st.status !== 'active' || !J(user.access, {}).admin_dashboard) return null;
@@ -323,7 +325,7 @@ function adminInfo(user) { // staff role + permissions when this person may use 
 }
 async function serveApp(res, user) { // the same page everyone gets, with the member's details injected so the workspace can start
   try {
-    const member = { name: user.name, email: user.email, access: J(user.access, J(ACCESS_DEFAULT, {})), admin: adminInfo(user) };
+    const member = { id: user.id, name: user.name, email: user.email, access: J(user.access, J(ACCESS_DEFAULT, {})), admin: adminInfo(user) };
     const html = (await fs.promises.readFile(HOME_FILE, 'utf8')).replace('<head>', '<head><script>window.__MEMBER__=' + JSON.stringify(member).replace(/</g, '\\u003c') + '</script><style>#home-header,#home-view{display:none!important}</style>');
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(html);
   } catch (e) { sendJson(res, 500, { error: 'File missing on server: index.html' }); }
@@ -371,6 +373,14 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/api/setup/status' || p === '/api/setup') { if (await setupApi(req, res, p) !== false) return; }
     if (p === '/api/account' || p.startsWith('/api/account/')) { if (await accountApi(req, res, p) !== false) return; }
+    if (p.startsWith('/api/crm/') && p !== '/api/crm/state') {   // shared deals, tasks, daily reports, files, notifications
+      if (req.method !== 'GET' && !sameOrigin(req)) throw fail(403, 'Cross-origin request blocked.');
+      if (hit('crm:' + clientIp(req), 900, 60000)) throw fail(429, 'Too many requests. Please slow down.');
+      const query = Object.fromEntries(new URL(req.url, 'http://localhost').searchParams);
+      const handled = await crmHandle(req, res, p.slice('/api/crm'.length), query, { ip: clientIp(req), readJson,
+        send: (st, obj) => (st === 204 ? (res.writeHead(204, { 'Cache-Control': 'no-store' }), res.end()) : sendJson(res, st, obj)) });
+      if (handled) return;
+    }
     if (p === '/api/crm/state' && ['GET', 'PUT', 'POST'].includes(req.method)) {
       if (req.method !== 'GET' && !sameOrigin(req)) throw fail(403, 'Cross-origin request blocked.');
       return await crmState(req, res);

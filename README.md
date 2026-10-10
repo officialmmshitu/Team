@@ -21,6 +21,11 @@ Account deletion, change-password inside the app, and multi-server scaling (the 
 
 `preview/imi-platform-preview.html` is a single-file demo (homepage + CRM) that runs without the server; sign-in is simulated there.
 
+## CRM Deals and Tasks (shared)
+- **Deals** (CRM > Deals): list and board views, stage stepper, Preview panel, key contacts, files, timeline and a team. The owner adds people by email (they need CRM access); each member logs one **daily progress report** per day under *Notes*, plus general notes.
+- **Tasks** (CRM > Tasks): All tasks, Due today, Overdue, Upcoming; personal tasks or tasks on a deal assigned to its members; bulk actions and CSV export.
+- Shared deal data lives in the database; deal files live in `data/files/`. Back up both.
+
 ## Control Centre (platform managers)
 - Everyone can change their own name, phone, bio, email and password under **My account** (user menu, or Settings in the sidebar). Changing a password signs out other devices; managers need 10+ characters. Admin-set details are not baked into the download: the first admin comes from your own settings.
 - Staff open it from the **Control Centre** group in the sidebar: Dashboard, Accounts, Create Account, Team Members, Gigs, Bids & Selection, Opportunities, We\u2019re Hiring, Activity Logs (ported from the Control Centre preview). What each person sees depends on their role and permissions.
