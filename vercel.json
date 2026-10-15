@@ -1,0 +1,29 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "app": {
+      "root": ".",
+      "runtime": "node"
+    },
+    "imi-platform": {
+      "root": "imi-platform 5th/imi-platform",
+      "runtime": "node"
+    },
+    "team": {
+      "root": "imi-platform 5th/Team",
+      "runtime": "node"
+    },
+    "imi-platform-2": {
+      "root": "imi-platform 7th/imi-platform",
+      "runtime": "node"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "app"
+      }
+    }
+  ]
+}
